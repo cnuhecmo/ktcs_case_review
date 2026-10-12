@@ -447,6 +447,9 @@ details.nc > summary .nc-t { flex-basis: 100%; font-weight: 600; }
   var CHOICES = [['동의', '현재 내용에 동의'], ['수정', '수정 필요']];
   var CLABEL = {}; CHOICES.forEach(function (c) { CLABEL[c[0]] = c[1]; });
   var LOCAL_KEY = 'ktcs-gn-casebook-opinions-v2';
+  // Google Apps Script 웹 앱 배포 후 /exec URL만 아래에 붙여 넣으세요.
+  // 화면/사례집 형식에는 영향을 주지 않습니다.
+  var ENDPOINT = 'PASTE_GOOGLE_APPS_SCRIPT_EXEC_URL_HERE';
   var SOC_KEY = 'ktcs-gn-casebook-soc';
   var fmt = new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   var $ = function (id) { return document.getElementById(id); };
@@ -818,14 +821,43 @@ details.nc > summary .nc-t { flex-basis: 100%; font-weight: 600; }
     S.chain = p.catch(function () {});
     return p.then(function (v) { S.inflight--; return v; }, function (e) { S.inflight--; throw e; });
   }
+  function sendToSheet(n, v, comment, at) {
+    if (!ENDPOINT || ENDPOINT.indexOf('PASTE_') === 0) return Promise.resolve({ skipped: true });
+    var c = byN[Number(n)];
+    if (!c) return Promise.reject(new Error('case not found'));
+    var payload = {
+      caseNo: String(c.n),
+      title: c.title || '',
+      ho: c.hoLabel || ('제' + c.ho + '호'),
+      society: c.society || '',
+      conclusion: c.type || '',
+      verdict: v === '동의' ? '판단에 동의' : '수정 필요',
+      comment: comment || '',
+      at: at
+    };
+    // Apps Script 웹 앱은 다른 도메인에서 호출되므로 no-cors로 전송한다.
+    // Content-Type을 text/plain으로 두면 불필요한 preflight를 피할 수 있다.
+    return fetch(ENDPOINT, {
+      method: 'POST', mode: 'no-cors', cache: 'no-store',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+  }
+
   function onSaveConfirm(n) {
     var chk = document.querySelector('input[name="cf-' + n + '"]:checked'), v = chk ? chk.value : '';
     var ta = $('cfc-' + n), comment = ta ? ta.value.trim() : '';
     if (!v) { S.cfMsg[n] = { text: '현재 내용에 동의 또는 수정 필요 중 하나를 고르세요.', kind: 'warn' }; paintCf(n); return; }
     if (v === '수정' && !comment) { if (ta) ta.focus(); S.cfMsg[n] = { text: '수정 필요를 고르면 수정할 부분과 이유를 적어 주세요.', kind: 'warn' }; paintCf(n); return; }
     S.cfMsg[n] = { text: '저장하는 중입니다.', kind: '' }; paintCf(n);
-    persist(function (b) { b.confirm[String(n)] = { choice: v, comment: comment, at: new Date().toISOString() }; })
-      .then(function () { delete S.cfDraft[n]; S.cfMsg[n] = null; S.keepScroll = true; draw(); }, function (e) { S.cfMsg[n] = { text: explain(e), kind: 'bad' }; S.keepScroll = true; draw(); });
+    var savedAt = new Date().toISOString();
+    persist(function (b) { b.confirm[String(n)] = { choice: v, comment: comment, at: savedAt }; })
+      .then(function () { return sendToSheet(n, v, comment, savedAt); })
+      .then(function (r) {
+        delete S.cfDraft[n];
+        S.cfMsg[n] = r && r.skipped ? { text: '이 기기에 저장했습니다. 관리자 시트 연결 URL은 아직 설정되지 않았습니다.', kind: 'warn' } : null;
+        S.keepScroll = true; draw();
+      }, function (e) { S.cfMsg[n] = { text: '내 저장은 완료했지만 관리자 시트 전송에 실패했습니다. 잠시 뒤 다시 저장해 주세요.', kind: 'bad' }; S.keepScroll = true; draw(); });
   }
   var cfArmed = null;
   function onClearConfirm(n) {

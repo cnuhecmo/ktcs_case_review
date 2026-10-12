@@ -2,7 +2,7 @@
  * 중대한 과실 사례집 검토자 의견 수신기 (구글 시트에 기록)
  *
  * 설정
- * 1) isjeong1201@gmail.com 계정으로 구글 시트를 새로 만든다. (이름 예: 사례집 의견)
+ * 1) 정인석 교수님이 만든 기존 구글 시트를 사용한다. (시트 ID는 아래 SPREADSHEET_ID에 고정됨) (이름 예: 사례집 의견)
  * 2) 시트 메뉴 확장 프로그램 > Apps Script 에 이 코드를 붙여 넣고 저장한다.
  * 3) 배포 > 새 배포 > 유형 "웹 앱"
  *      - 다음 사용자로 실행: 나
@@ -11,6 +11,7 @@
  * 4) 나오는 URL(…/exec)을 사례집 HTML의 ENDPOINT 값에 붙여 넣는다.
  * 코드를 고친 뒤에는 "배포 관리 > 편집 > 새 버전"으로 다시 배포해야 반영된다.
  */
+var SPREADSHEET_ID = '1iT57TZKFCVzVVfkNHGx7XXCpoecpfAdJ3JIgzK1AoEQ';
 var SHEET_NAME = '의견';
 var HEADERS = ['전송 시각', '사례 번호', '제목', '호', '분과 학회', '결론', '의견', '의견 내용'];
 
@@ -27,7 +28,7 @@ function doPost(e) {
     };
     if (!rec.caseNo || (rec.verdict !== '판단에 동의' && rec.verdict !== '수정 필요')) throw new Error('bad payload');
 
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     var sh = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
     if (sh.getLastRow() === 0) {
       sh.appendRow(HEADERS);
@@ -48,4 +49,10 @@ function doPost(e) {
 
 function out(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// 배포 상태 확인용: /exec 주소를 브라우저에서 열었을 때 연결 여부를 확인한다.
+function doGet(e) {
+  return out({ ok: true, service: 'KTCS casebook opinion receiver', sheet: SHEET_NAME });
 }
